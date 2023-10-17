@@ -1,0 +1,5 @@
+loglevel: debug
+walletPort: 3333
+statsPort: 3344
+kafka:
+  host: kafka:9092

@@ -1,0 +1,56 @@
+version: "3.8"
+services:
+  wallet:
+    build:
+      dockerfile: wallet.Dockerfile
+    container_name: wallet
+    ports:
+      - "3333:3333"
+    environment:
+      IMPAY_KAFKA_HOST: kafka:9092
+      IMPAY_WALLETPORT: 3333
+    networks:
+      - imp_net
+    depends_on:
+      - kafka
+
+  stats:
+    build:
+      dockerfile: stats.Dockerfile
+    container_name: stats
+    ports:
+      - "3344:3344"
+    environment:
+      IMPAY_KAFKA_HOST: kafka:9092
+      IMPAY_STATSPORT: 3344
+    networks:
+      - imp_net
+    depends_on:
+      - kafka
+
+  kafka:
+    container_name: kafka
+    image: bitnami/kafka:3.5
+    hostname: kafka
+    ports:
+      - "9092:9092"
+    volumes:
+      - kafkad:/bitnami
+    environment:
+      - KAFKA_CFG_NODE_ID=0
+      - KAFKA_CFG_PROCESS_ROLES=controller,broker
+      - KAFKA_CFG_CONTROLLER_QUORUM_VOTERS=0@kafka:9093
+      - KAFKA_CFG_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093
+      - KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://:9092
+      - KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      - KAFKA_CFG_CONTROLLER_LISTENER_NAMES=CONTROLLER
+      - KAFKA_CFG_INTER_BROKER_LISTENER_NAME=PLAINTEXT
+      - KAFKA_AUTO_CREATE_TOPICS_ENABLE=true
+    networks:
+      - imp_net
+
+volumes:
+  kafkad: {}
+
+networks:
+  imp_net: {}
