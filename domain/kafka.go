@@ -1,8 +1,15 @@
 package domain
 
-import "github.com/shopspring/decimal"
+import (
+	"time"
+
+	"github.com/shopspring/decimal"
+)
 
 const (
+	ProducerFlushMs = 100
+	ConsumerTimeout = 100 * time.Millisecond
+
 	TopicWalletCreated     = "Wallet_Created"
 	TopicWalletDeleted     = "Wallet_Deleted"
 	TopicWalletDeposited   = "Wallet_Deposited"

@@ -33,24 +33,33 @@ type StatsAction struct {
 	Active      decimal.Decimal
 	Inactive    decimal.Decimal
 
-	logger    domain.Logger
-	consumers []*kafka.Consumer
-	done      chan struct{}
+	logger      domain.Logger
+	consumerSvc Consumer
+	consumers   []*kafka.Consumer
+	done        chan struct{}
+	chans       map[string]chan []byte
 }
 
 type Consumer interface {
-	Subscribe(topic string, ch chan<- []byte) error
+	Subscribe(topic string, ch chan []byte) error
 }
 
 func NewStatsAction(
 	consumerSvc Consumer,
 	logger domain.Logger,
-) (*StatsAction, error) {
-	ret := &StatsAction{
-		logger: logger,
-		done:   make(chan struct{}, doneChanLen), // actually we only need 5 len (number of topics)
+) *StatsAction {
+	return &StatsAction{
+		logger:      logger,
+		consumerSvc: consumerSvc,
+		done:        make(chan struct{}, doneChanLen), // actually we only need 5 len (number of topics)
+		chans: map[string]chan []byte{
+			domain.TopicWalletCreated:     make(chan []byte, 50),
+			domain.TopicWalletDeleted:     make(chan []byte, 50),
+			domain.TopicWalletTransferred: make(chan []byte, 50),
+			domain.TopicWalletDeposited:   make(chan []byte, 50),
+			domain.TopicWalletWithdrawn:   make(chan []byte, 50),
+		},
 	}
-	return ret, ret.initConsumers(consumerSvc)
 }
 
 func (s *StatsAction) Get(c echo.Context) (err error) {
@@ -78,7 +87,7 @@ func (s *StatsAction) CloseConsumers() {
 	s.logger.Debug("consumers closed")
 }
 
-func (s *StatsAction) initConsumers(svc Consumer) error {
+func (s *StatsAction) InitConsumers() error {
 	subs := map[string]func([]byte){
 		domain.TopicWalletCreated: func(m []byte) {
 			s.Lock()
@@ -115,8 +124,8 @@ func (s *StatsAction) initConsumers(svc Consumer) error {
 		},
 	}
 
-	for topic, callback := range subs {
-		err := s.subscribe(svc, topic, callback)
+	for topic := range s.chans {
+		err := s.subscribe(topic, subs[topic])
 		if err != nil {
 			return err
 		}
@@ -124,19 +133,18 @@ func (s *StatsAction) initConsumers(svc Consumer) error {
 	return nil
 }
 
-func (s *StatsAction) subscribe(svc Consumer, topic string, callback func([]byte)) error {
-	ch := make(chan []byte)
-	err := svc.Subscribe(topic, ch)
+func (s *StatsAction) subscribe(topic string, callback func([]byte)) error {
+	err := s.consumerSvc.Subscribe(topic, s.chans[topic])
 	if err != nil {
 		return err
 	}
 	go func() {
 		for {
 			select {
-			case m := <-ch:
+			case m := <-s.chans[topic]:
 				callback(m)
 			case <-s.done:
-				close(ch)
+				close(s.chans[topic])
 				return
 			}
 		}

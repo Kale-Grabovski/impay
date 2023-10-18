@@ -9,8 +9,6 @@ import (
 	"github.com/Kale-Grabovski/impay/domain"
 )
 
-const producerFlushMs = 100
-
 type Producer struct {
 	cfg      *domain.Config
 	producer *kafka.Producer
@@ -53,7 +51,7 @@ func (s *Producer) Send(topic string, partition int32, msg any) error {
 }
 
 func (s *Producer) Close() {
-	s.producer.Flush(producerFlushMs)
+	s.producer.Flush(domain.ProducerFlushMs)
 	s.producer.Close()
 	s.logger.Debug("producer closed")
 }

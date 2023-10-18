@@ -171,20 +171,27 @@ func (s *WalletAction) Update(c echo.Context) (err error) {
 func (s *WalletAction) Delete(c echo.Context) (err error) {
 	s.Lock()
 	if wallet, ok := s.wallets[c.Param("id")]; ok {
+		if wallet.Status == domain.StatusInactive {
+			s.Unlock()
+			return c.JSON(http.StatusBadRequest, updateDeleteWalletResp{
+				Err: "wallet already deleted",
+			})
+		}
 		wallet.Status = domain.StatusInactive
 		s.Unlock()
+
+		msg := domain.WalletMsg{}
+		err = s.producer.Send(domain.TopicWalletDeleted, 0, msg)
+		if err != nil {
+			s.logger.Error("cannot publish delete event to kafka", zap.Error(err))
+		}
+
 		return c.JSON(http.StatusOK, updateDeleteWalletResp{
 			ID:      wallet.ID,
 			Success: true,
 		})
 	}
 	s.Unlock()
-
-	msg := domain.WalletMsg{}
-	err = s.producer.Send(domain.TopicWalletDeleted, 0, msg)
-	if err != nil {
-		s.logger.Error("cannot publish delete event to kafka", zap.Error(err))
-	}
 
 	return c.JSON(http.StatusNotFound, updateDeleteWalletResp{
 		Err: "wallet not found",
@@ -269,7 +276,7 @@ func (s *WalletAction) financeProcess(
 ) error {
 	req := &financeReq{}
 	if err := c.Bind(req); err != nil {
-		return c.JSON(http.StatusBadRequest, createWalletResp{
+		return c.JSON(http.StatusBadRequest, financeResp{
 			Err: "wrong input params",
 		})
 	}

@@ -24,7 +24,8 @@ var ConfigApi = []di.Def{
 		Build: func(ctx di.Container) (interface{}, error) {
 			logger := ctx.Get("logger").(domain.Logger)
 			consumer := ctx.Get("kafka.consumer").(*kafka.Consumer)
-			return api.NewStatsAction(consumer, logger)
+			action := api.NewStatsAction(consumer, logger)
+			return action, action.InitConsumers()
 		},
 		Close: func(obj interface{}) error {
 			obj.(*api.StatsAction).CloseConsumers()
