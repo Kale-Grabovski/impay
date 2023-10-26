@@ -40,5 +40,8 @@ var ConfigService = []di.Def{
 			}
 			return kafka.NewConsumer(consumer, logger), nil
 		},
+		Close: func(obj interface{}) error {
+			return obj.(*kafkaBase.Consumer).Close()
+		},
 	},
 }
