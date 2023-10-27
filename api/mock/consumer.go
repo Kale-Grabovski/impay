@@ -1,6 +1,7 @@
 package mock
 
 import (
+	"context"
 	"time"
 
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
@@ -11,8 +12,8 @@ type ConsumerMock struct {
 	mock.Mock
 }
 
-func (p *ConsumerMock) Subscribe(topic string, ch chan []byte) error {
-	return p.Called(topic, ch).Error(0)
+func (p *ConsumerMock) Subscribe(ctx context.Context, chans map[string]chan []byte) error {
+	return p.Called(ctx, chans).Error(0)
 }
 
 type BaseConsumerMock struct {

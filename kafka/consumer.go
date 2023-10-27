@@ -1,6 +1,7 @@
 package kafka
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -27,25 +28,33 @@ func NewConsumer(consumer BaseConsumer, logger domain.Logger) *Consumer {
 	}
 }
 
-func (s *Consumer) Subscribe(topic string, ch chan []byte) error {
-	err := s.consumer.SubscribeTopics([]string{topic}, nil)
+func (s *Consumer) Subscribe(ctx context.Context, chans map[string]chan []byte) error {
+	var topics []string
+	for topic := range chans {
+		topics = append(topics, topic)
+	}
+
+	err := s.consumer.SubscribeTopics(topics, nil)
 	if err != nil {
-		return fmt.Errorf("cannot subscribe to topic %s: %v", topic, err)
+		return fmt.Errorf("cannot subscribe to topics: %w", err)
 	}
 
 	go func() {
 		for {
 			msg, err := s.consumer.ReadMessage(domain.ConsumerTimeout)
-			if err != nil {
-				if !err.(kafka.Error).IsTimeout() {
-					s.logger.Error("cannot consume event from topic "+topic, zap.Error(err))
-				}
-				continue
+			if err != nil && !err.(kafka.Error).IsTimeout() {
+				s.logger.Error("cannot consume event", zap.Error(err))
 			}
 
 			select {
-			case ch <- msg.Value:
+			case <-ctx.Done():
+				return
 			default:
+				if msg != nil {
+					topic := *msg.TopicPartition.Topic
+					s.logger.Debug("msg consumed from topic: "+topic, zap.Error(err))
+					chans[topic] <- msg.Value
+				}
 			}
 		}
 	}()

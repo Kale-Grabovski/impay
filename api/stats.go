@@ -1,19 +1,18 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"sync"
 
-	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/labstack/echo/v4"
 	"github.com/shopspring/decimal"
-	"go.uber.org/zap"
 
 	"github.com/Kale-Grabovski/impay/domain"
 )
 
-const doneChanLen = 100
+const doneChanLen = 50
 
 type statsWalletResp struct {
 	Deposited   decimal.Decimal `json:"deposited"`
@@ -35,29 +34,31 @@ type StatsAction struct {
 
 	logger      domain.Logger
 	consumerSvc Consumer
-	consumers   []*kafka.Consumer
-	done        chan struct{}
+	ctx         context.Context
+	cancel      context.CancelFunc
 	chans       map[string]chan []byte
 }
 
 type Consumer interface {
-	Subscribe(topic string, ch chan []byte) error
+	Subscribe(ctx context.Context, chans map[string]chan []byte) error
 }
 
 func NewStatsAction(
 	consumerSvc Consumer,
 	logger domain.Logger,
 ) *StatsAction {
+	ctx, cancel := context.WithCancel(context.Background())
 	return &StatsAction{
 		logger:      logger,
 		consumerSvc: consumerSvc,
-		done:        make(chan struct{}, doneChanLen), // actually we only need 5 len (number of topics)
+		ctx:         ctx,
+		cancel:      cancel,
 		chans: map[string]chan []byte{
-			domain.TopicWalletCreated:     make(chan []byte, 50),
-			domain.TopicWalletDeleted:     make(chan []byte, 50),
-			domain.TopicWalletTransferred: make(chan []byte, 50),
-			domain.TopicWalletDeposited:   make(chan []byte, 50),
-			domain.TopicWalletWithdrawn:   make(chan []byte, 50),
+			domain.TopicWalletCreated:     make(chan []byte, doneChanLen),
+			domain.TopicWalletDeleted:     make(chan []byte, doneChanLen),
+			domain.TopicWalletTransferred: make(chan []byte, doneChanLen),
+			domain.TopicWalletDeposited:   make(chan []byte, doneChanLen),
+			domain.TopicWalletWithdrawn:   make(chan []byte, doneChanLen),
 		},
 	}
 }
@@ -76,15 +77,7 @@ func (s *StatsAction) Get(c echo.Context) (err error) {
 }
 
 func (s *StatsAction) CloseConsumers() {
-	for _, c := range s.consumers {
-		if err := c.Close(); err != nil {
-			s.logger.Error("cannot close consumer", zap.Error(err))
-		}
-	}
-	for i := 0; i < doneChanLen; i++ {
-		s.done <- struct{}{}
-	}
-	s.logger.Debug("consumers closed")
+	s.cancel()
 }
 
 func (s *StatsAction) InitConsumers() error {
@@ -124,30 +117,25 @@ func (s *StatsAction) InitConsumers() error {
 		},
 	}
 
+	err := s.consumerSvc.Subscribe(s.ctx, s.chans)
+	if err != nil {
+		return err
+	}
+
 	for topic := range s.chans {
-		err := s.subscribe(topic, subs[topic])
-		if err != nil {
-			return err
-		}
+		go s.subscribe(topic, subs[topic])
 	}
 	return nil
 }
 
-func (s *StatsAction) subscribe(topic string, callback func([]byte)) error {
-	err := s.consumerSvc.Subscribe(topic, s.chans[topic])
-	if err != nil {
-		return err
-	}
-	go func() {
-		for {
-			select {
-			case m := <-s.chans[topic]:
-				callback(m)
-			case <-s.done:
-				close(s.chans[topic])
-				return
-			}
+func (s *StatsAction) subscribe(topic string, callback func([]byte)) {
+	for {
+		select {
+		case m := <-s.chans[topic]:
+			callback(m)
+		case <-s.ctx.Done():
+			close(s.chans[topic])
+			return
 		}
-	}()
-	return nil
+	}
 }
