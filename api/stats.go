@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/labstack/echo/v4"
 	"github.com/shopspring/decimal"
@@ -40,7 +41,7 @@ type StatsAction struct {
 }
 
 type Consumer interface {
-	Subscribe(ctx context.Context, chans map[string]chan []byte) error
+	Subscribe(ctx context.Context, topic string, ch chan []byte) error
 }
 
 func NewStatsAction(
@@ -78,6 +79,7 @@ func (s *StatsAction) Get(c echo.Context) (err error) {
 
 func (s *StatsAction) CloseConsumers() {
 	s.cancel()
+	time.Sleep(domain.ConsumerTimeout + 10*time.Millisecond)
 }
 
 func (s *StatsAction) InitConsumers() error {
@@ -117,25 +119,31 @@ func (s *StatsAction) InitConsumers() error {
 		},
 	}
 
-	err := s.consumerSvc.Subscribe(s.ctx, s.chans)
-	if err != nil {
-		return err
-	}
-
 	for topic := range s.chans {
-		go s.subscribe(topic, subs[topic])
+		err := s.subscribe(topic, subs[topic])
+		if err != nil {
+			return err
+		}
 	}
 	return nil
 }
 
-func (s *StatsAction) subscribe(topic string, callback func([]byte)) {
-	for {
-		select {
-		case m := <-s.chans[topic]:
-			callback(m)
-		case <-s.ctx.Done():
-			close(s.chans[topic])
-			return
-		}
+func (s *StatsAction) subscribe(topic string, callback func([]byte)) error {
+	err := s.consumerSvc.Subscribe(s.ctx, topic, s.chans[topic])
+	if err != nil {
+		return err
 	}
+
+	go func() {
+		for {
+			select {
+			case m := <-s.chans[topic]:
+				callback(m)
+			case <-s.ctx.Done():
+				close(s.chans[topic])
+				return
+			}
+		}
+	}()
+	return nil
 }

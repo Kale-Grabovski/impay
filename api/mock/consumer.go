@@ -12,8 +12,8 @@ type ConsumerMock struct {
 	mock.Mock
 }
 
-func (p *ConsumerMock) Subscribe(ctx context.Context, chans map[string]chan []byte) error {
-	return p.Called(ctx, chans).Error(0)
+func (p *ConsumerMock) Subscribe(ctx context.Context, topic string, ch chan []byte) error {
+	return p.Called(ctx, topic, ch).Error(0)
 }
 
 type BaseConsumerMock struct {
