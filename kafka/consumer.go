@@ -56,6 +56,9 @@ func (s *Consumer) Subscribe(ctx context.Context, topic string, ch chan []byte) 
 			select {
 			case <-ctx.Done():
 				s.logger.Debug("closing consumer " + topic)
+				if msg != nil {
+					ch <- msg.Value
+				}
 
 				err = consumer.Close()
 				if err != nil {
@@ -64,7 +67,6 @@ func (s *Consumer) Subscribe(ctx context.Context, topic string, ch chan []byte) 
 				return
 			default:
 				if msg != nil {
-					s.logger.Debug("msg consumed from topic: "+topic, zap.Error(err))
 					ch <- msg.Value
 				}
 			}

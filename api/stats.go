@@ -80,6 +80,9 @@ func (s *StatsAction) Get(c echo.Context) (err error) {
 func (s *StatsAction) CloseConsumers() {
 	s.cancel()
 	time.Sleep(domain.ConsumerTimeout + 10*time.Millisecond)
+	for _, ch := range s.chans {
+		close(ch)
+	}
 }
 
 func (s *StatsAction) InitConsumers() error {
@@ -140,7 +143,7 @@ func (s *StatsAction) subscribe(topic string, callback func([]byte)) error {
 			case m := <-s.chans[topic]:
 				callback(m)
 			case <-s.ctx.Done():
-				close(s.chans[topic])
+				s.logger.Debug("subscribe topic finished: " + topic)
 				return
 			}
 		}
